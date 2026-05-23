@@ -1,5 +1,10 @@
 # Findium
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Platform: Windows](https://img.shields.io/badge/Platform-Windows-0078D6?logo=windows)](https://github.com/LordEris/App-Findium/releases)
+[![Electron](https://img.shields.io/badge/Electron-31-47848F?logo=electron)](https://www.electronjs.org/)
+[![React](https://img.shields.io/badge/React-18-61DAFB?logo=react)](https://react.dev/)
+
 > **OSINT workspace — AI-powered investigation with encrypted local storage**
 
 Findium is a desktop application built with Electron that combines open-source intelligence (OSINT) tools, an AI analysis engine (Claude), and a data broker erasure module into a single encrypted workspace.
@@ -169,4 +174,4 @@ Sourced from [eraser](https://github.com/digisamroc/eraser) `data/brokers.yaml`:
 
 ## License
 
-MIT
+[MIT](LICENSE) © 2026 LordEris
