@@ -16,6 +16,7 @@ const REPLACEMENTS = [
   { marker: 'screens.jsx — Écrans principaux',               src: 'screens.jsx'       },
   { marker: 'findium — Effacement (data brokers',        src: 'effacement.jsx'    },
   { marker: 'investigation.jsx — Vue détaillée',             src: 'investigation.jsx' },
+  { marker: 'findium — Nettoyage PC (inspiré de daniilsys', src: 'nettoyage.jsx'     },
   { marker: 'app.jsx — Shell principal',                     src: 'app.jsx'           },
 ];
 

@@ -68,4 +68,12 @@ contextBridge.exposeInMainWorld('findium', {
     openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
   },
 
+  // ── Nettoyage PC (daniilsys/cleanapp) ───────────────────────────────────
+  // scan  : détecte les dossiers orphelins dans %APPDATA% / %LOCALAPPDATA%
+  // delete: supprime les chemins sélectionnés (garde-fou : hors AppData refusé)
+  cleaner: {
+    scan:   ()      => ipcRenderer.invoke('cleaner:scan'),
+    delete: (paths) => ipcRenderer.invoke('cleaner:delete', paths),
+  },
+
 });

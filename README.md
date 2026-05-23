@@ -42,6 +42,15 @@ Think of it as a **free, open-source alternative to [Maltego](https://www.malteg
 - Tracks request status: Unknown → Found → Drafting → Sent → Acknowledged → Removed
 - Protection score dashboard with per-category breakdown
 
+### Nettoyage PC
+- Détecte les **dossiers orphelins** laissés par des applications désinstallées dans `%APPDATA%` et `%LOCALAPPDATA%`
+- Lit le registre Windows (3 hives : HKLM, HKCU, WOW6432Node) pour connaître les apps installées
+- Score de confiance 0–100 % par dossier basé sur : âge du dernier accès, taille, qualité de correspondance du nom (algorithme Jaccard tokenisé)
+- Dossiers dont la correspondance avec une app installée est ≥ 60 % → exclus automatiquement (encore présente)
+- Pré-sélectionne les orphelins haute confiance (≥ 75 %)
+- Suppression sécurisée avec confirmation — garde-fou : tout chemin hors AppData est refusé
+- Inspiré de [daniilsys/cleanapp](https://github.com/daniilsys/cleanapp) (Rust CLI cross-platform)
+
 ### Deep / Dark Web Monitor
 - Radar UI showing 8 monitored zones (breach indices, paste sites, combo lists, dark forums, Telegram channels, Discord, .onion markets, I2P)
 - Finding tracker with severity levels (Critical / High / Medium / Low)
@@ -60,6 +69,7 @@ Think of it as a **free, open-source alternative to [Maltego](https://www.malteg
 | Project | Role |
 |---|---|
 | [digisamroc/eraser](https://github.com/digisamroc/eraser) | Broker database (`data/brokers.yaml`) — 750+ data brokers with emails and opt-out URLs. Eraser is a free CLI/web tool that automates sending removal requests via SMTP; Findium uses its broker registry to power the Effacement module. |
+| [daniilsys/cleanapp](https://github.com/daniilsys/cleanapp) | PC cleaner algorithm — Rust CLI that detects orphaned AppData folders left by uninstalled apps using registry lookup + confidence scoring. Findium reimplements the same Windows scanning logic (registry hives, Jaccard token matching, age/size confidence) natively in Node.js. |
 | [Electron](https://www.electronjs.org/) v31 | Desktop shell, IPC, DPAPI encryption (`safeStorage`) |
 | [React](https://react.dev/) 18 | UI framework (runtime JSX via Babel standalone) |
 | [Babel Standalone](https://babeljs.io/docs/babel-standalone) 7 | In-browser JSX compilation — no build step needed for the renderer |

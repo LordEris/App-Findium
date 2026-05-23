@@ -156,6 +156,7 @@ function App() {
     { key: "new",        label: "Nouvelle",     ico: "plus",      k: "⌘N" },
     { key: "history",    label: "Historique",   ico: "archive",   k: "⌘H" },
     { key: "effacement", label: "Effacement",   ico: "shield",    k: "⌘E" },
+    { key: "nettoyage",  label: "Nettoyage",    ico: "trash",     k: "⌘C" },
     { key: "config",     label: "Configuration",ico: "settings",  k: "⌘," },
     { key: "compte",     label: "Compte",       ico: "user",      k: "⌘." },
   ];
@@ -275,6 +276,9 @@ function App() {
           )}
           {route.name === "effacement" && (
             <Effacement/>
+          )}
+          {route.name === "nettoyage" && (
+            <Nettoyage/>
           )}
         </main>
       </div>
