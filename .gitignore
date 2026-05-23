@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.claude/
+findium/
+design_output.txt
+*_b64.txt
+tweaks-panel.jsx

@@ -1,0 +1,135 @@
+/*
+ * tokens.css — Design tokens Findium
+ *
+ * Variables CSS centralisées pour l'ensemble de l'interface.
+ * Toute valeur visuelle sensible (couleur, rayon, ombre) doit être définie ici
+ * plutôt qu'en dur dans app.css ou dans les composants JSX, afin de rendre
+ * les thèmes et palettes facilement modifiables.
+ *
+ * Structure :
+ *   :root            → palette par défaut "matrix" (fond sombre + vert néon #00ff7a)
+ *   [data-palette=*] → variantes de couleur accent :
+ *                        matrix  : vert #00ff7a  (défaut)
+ *                        neon    : vert vif #39ff14
+ *                        olive   : vert kaki #c4e641  (aussi fond et texte ajustés)
+ *                        cyan    : bleu-vert #5cffe2
+ *
+ * Les palettes "neon", "matrix" et "cyan" ne remplacent que les variables --accent-*
+ * (fond et texte restent identiques). La palette "olive" ajuste aussi --bg-* et --fg-*
+ * pour un rendu cohérent avec la teinte plus chaude de l'accent.
+ *
+ * Nomenclature des variables :
+ *   --bg-*       : couches de fond (0 = plus sombre, 3 = plus clair)
+ *   --bg-card    : fond des cartes (légèrement plus chaud que --bg)
+ *   --bg-elev    : fond des éléments élevés (modaux, dropdowns)
+ *   --line-*     : bordures et séparateurs
+ *   --line-strong: ligne accentuée (utilisée dans les grilles SVG)
+ *   --fg-*       : niveaux de texte (0 = plus fort, 3 = atténué)
+ *   --accent     : couleur primaire d'accentuation (nœuds, boutons, indicateurs)
+ *   --accent-hi  : variante plus claire pour les hover et gradients
+ *   --accent-soft: fond translucide (halos, glassmorphism)
+ *   --accent-mute: fond très atténué (backgrounds de tags)
+ *   --accent-line: bordure translucide (cards accentuées, focus ring)
+ *   --warn       : avertissement (orange)
+ *   --err        : erreur (rouge-rose)
+ *   --info       : information (bleu clair)
+ *   --violet     : secondaire informatif (log "query")
+ *   --font-sans  : police principale (Inter avec fallbacks système)
+ *   --font-mono  : police monospace (JetBrains Mono avec fallbacks)
+ *   --r-sm/md/lg : rayons de bordure (6 / 10 / 14 px)
+ *   --sh-glow    : ombre luisante accentuée (cards accent)
+ *   --sh-card    : ombre standard des cartes
+ */
+
+:root {
+  /* ── Niveaux de fond ─────────────────────────────────────────────────────── */
+  --bg:      #0a0f0d;   /* fond global */
+  --bg-1:    #0e1513;   /* fond légèrement surélevé (sidebar, topbar) */
+  --bg-2:    #131b19;   /* fond des éléments interactifs au repos */
+  --bg-3:    #19231f;   /* fond hover / focus */
+  --bg-card: #0d1411;   /* fond des cartes (légèrement plus chaud) */
+  --bg-elev: #121a17;   /* fond des éléments élevés (modaux, popovers) */
+
+  /* ── Bordures ────────────────────────────────────────────────────────────── */
+  --line:         rgba(255, 255, 255, 0.06);    /* bordure subtile */
+  --line-2:       rgba(255, 255, 255, 0.10);    /* bordure visible */
+  --line-strong:  rgba(0, 255, 130, 0.18);      /* grille SVG / séparateur accent */
+
+  /* ── Niveaux de texte ────────────────────────────────────────────────────── */
+  --fg:   #e6f5ec;   /* texte principal */
+  --fg-1: #c2d4cb;   /* texte secondaire */
+  --fg-2: #8a9d94;   /* texte atténué */
+  --fg-3: #5c6f66;   /* texte très atténué (labels, timestamps) */
+
+  /* ── Accent (palette matrix par défaut) ──────────────────────────────────── */
+  --accent:      #00ff7a;
+  --accent-hi:   #5cffaa;
+  --accent-soft: rgba(0, 255, 122, 0.14);
+  --accent-mute: rgba(0, 255, 122, 0.06);
+  --accent-line: rgba(0, 255, 122, 0.30);
+
+  /* ── Couleurs sémantiques ────────────────────────────────────────────────── */
+  --warn:   #ffb547;   /* avertissement */
+  --err:    #ff5a72;   /* erreur */
+  --info:   #5cc5ff;   /* information */
+  --violet: #b48cff;   /* log "query" dans le terminal */
+
+  /* ── Typographie ─────────────────────────────────────────────────────────── */
+  --font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+
+  /* ── Géométrie ───────────────────────────────────────────────────────────── */
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 14px;
+
+  /* ── Ombres ──────────────────────────────────────────────────────────────── */
+  --sh-glow: 0 0 0 1px var(--accent-line), 0 0 24px rgba(0, 255, 122, 0.12);
+  --sh-card: 0 1px 0 rgba(255,255,255,0.02) inset, 0 8px 24px rgba(0,0,0,0.4);
+}
+
+/* ── Palette : matrix (identique au défaut, explicitement surchargeable) ───── */
+body[data-palette="matrix"] {
+  --accent:      #00ff7a;
+  --accent-hi:   #5cffaa;
+  --accent-soft: rgba(0, 255, 122, 0.14);
+  --accent-mute: rgba(0, 255, 122, 0.06);
+  --accent-line: rgba(0, 255, 122, 0.30);
+}
+
+/* ── Palette : neon (vert acide, plus vif que matrix) ───────────────────────── */
+body[data-palette="neon"] {
+  --accent:      #39ff14;
+  --accent-hi:   #7cff5c;
+  --accent-soft: rgba(57, 255, 20, 0.16);
+  --accent-mute: rgba(57, 255, 20, 0.06);
+  --accent-line: rgba(57, 255, 20, 0.32);
+}
+
+/* ── Palette : olive (teinte kaki chaude — fond et texte aussi ajustés) ─────── */
+body[data-palette="olive"] {
+  --bg:      #0c0e07;
+  --bg-1:    #11140b;
+  --bg-2:    #161a0f;
+  --bg-3:    #1c2114;
+  --bg-card: #10130a;
+  --bg-elev: #15190e;
+  --fg:      #ecf2cf;
+  --fg-1:    #d0d9a9;
+  --fg-2:    #8d9968;
+  --fg-3:    #5b6440;
+  --accent:      #c4e641;
+  --accent-hi:   #dcf26e;
+  --accent-soft: rgba(196, 230, 65, 0.14);
+  --accent-mute: rgba(196, 230, 65, 0.06);
+  --accent-line: rgba(196, 230, 65, 0.30);
+}
+
+/* ── Palette : cyan (bleu-vert, ambiance tech froide) ───────────────────────── */
+body[data-palette="cyan"] {
+  --accent:      #5cffe2;
+  --accent-hi:   #9affef;
+  --accent-soft: rgba(92, 255, 226, 0.14);
+  --accent-mute: rgba(92, 255, 226, 0.06);
+  --accent-line: rgba(92, 255, 226, 0.30);
+}

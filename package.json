@@ -1,0 +1,38 @@
+{
+  "name": "findium",
+  "version": "0.1.0",
+  "description": "OSINT workspace — AI-powered investigation with encrypted local storage",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "dist": "electron-builder --win --x64"
+  },
+  "build": {
+    "appId": "eu.findium.app",
+    "productName": "Findium",
+    "files": [
+      "Findium.html",
+      "main.js",
+      "preload.js",
+      "vendor/"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "include": "build/installer.nsh"
+    }
+  },
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3"
+  }
+}
