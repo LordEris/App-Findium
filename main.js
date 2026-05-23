@@ -553,62 +553,143 @@ ipcMain.handle('shell:openExternal', (_, url) => {
 });
 
 
-// ─── IPC : Nettoyage PC (inspiré de daniilsys/cleanapp) ──────────────────────
+// ─── IPC : Nettoyage PC — port fidèle de daniilsys/cleanapp ─────────────────
 //
-// Algorithme calqué sur src/scan/windows.rs de daniilsys/cleanapp :
-//   1. Lit les apps installées depuis le registre Windows (3 hives)
-//   2. Scanne %APPDATA% et %LOCALAPPDATA%
-//   3. Score de confiance 0-100 : âge + qualité de correspondance du nom
-//   4. Dossiers dont le meilleur score de correspondance ≥ 0.6 → exclus (app encore présente)
-//
+// Port Node.js de l'algorithme Rust src/scan/windows.rs + src/scan/mod.rs
 // Source : https://github.com/daniilsys/cleanapp
+//
+// Corrections v2 vs v1 (après lecture du vrai code source) :
+//   • score initial = 0.0 (pas 0.5)
+//   • tokenize : filtre NOISE_TOKENS, pas de filtre longueur
+//   • token_overlap : common/folder_tokens.len() (pas Jaccard)
+//   • Signal 1 : 4 paliers discrets (pas linéaire)
+//   • Signal 2 (âge) : 6 paliers (< 7j / < 30j / < 90j / < 180j / < 365j / > 365j)
+//   • Signal 3 (taille) : ajouté (0 / <1KB / <1MB / <100MB / >100MB)
+//   • Signal 4 (Windows) : uninstalled boost +0.15 (install_location manquant)
+//   • Registry : lire DisplayName + Publisher + InstallLocation
+//   • EXCLUDED_NAMES : liste exacte cleanapp (dev tools, caches système)
+//   • SYSTEM_NAME_PREFIXES : "microsoft.", "microsoft ", "windows ", "windows.", "{"
+//   • Scoop : scan ~/scoop/apps
+//   • Taille : calcul récursif (profondeur max 4)
 
 const { execSync } = require('child_process');
+const os = require('os');
 
-// Dossiers système à ne jamais signaler comme orphelins
-const CLEANER_SKIP = new Set([
-  'microsoft', 'windows', 'windowsapps', 'packages', 'temp', 'tmp',
-  'inetcache', 'inetcookies', 'inethistory', 'low', 'crashpad', 'crashdumps',
-  'roamingstate', 'comms', 'd3dshadercache', 'local settings', 'application data',
-  'nvidia corporation', 'nvidia', 'intel', 'amd', 'realtek', 'microsoft corporation',
-  'default', 'public', 'all users', 'google', 'mozilla', 'apple',
-  'desktop', 'documents', 'downloads', 'pictures', 'music', 'videos', 'onedrive',
+// ── Constantes identiques à cleanapp/windows.rs ──────────────────────────────
+
+// Noms de dossiers exclus (comparaison exacte, sensible à la casse — comme Rust)
+const CLEANER_EXCLUDED = new Set([
+  // Composants système Windows
+  'Microsoft', 'Windows', 'WindowsApps', 'Package Cache', 'Packages',
+  'SystemApps', 'INetCache', 'INetCookies', 'History', 'Temporary Internet Files',
+  'Microsoft Edge', 'MicrosoftEdge',
+  // Dev tools / runtimes
+  'pip', 'pnpm', 'npm', 'node-gyp', 'typescript', 'yarn', 'cargo', 'rustup',
+  'NuGet', 'dotnet', '.dotnet', 'Python', 'node_modules',
+  // Caches système
+  'CrashDumps', 'Temp', 'D3DSCache', 'FontCache', 'IconCache',
+  'ElevatedDiagnostics', 'ConnectedDevicesPlatform',
 ]);
 
-/** Découpe un nom en tokens significatifs (longueur > 2). */
+// Préfixes système (comparaison en minuscules — comme Rust)
+const CLEANER_PREFIXES = ['microsoft.', 'microsoft ', 'windows ', 'windows.', '{'];
+
+// Tokens bruités filtrés — identiques à cleanapp/mod.rs NOISE_TOKENS
+const CLEANER_NOISE = new Set(['com', 'org', 'net', 'app', 'io', 'the', 'get']);
+
+// ── Helpers (portés de mod.rs) ────────────────────────────────────────────────
+
+/**
+ * tokenize_name (mod.rs) — sépare par [. - _ ' '], minuscules,
+ * filtre vide + noise tokens. PAS de filtre longueur.
+ */
 function cleanerTokenize(name) {
-  return name.toLowerCase().split(/[\s.\-_]+/).filter(t => t.length > 2);
+  return name.split(/[.\-_ ]/)
+    .map(t => t.toLowerCase())
+    .filter(t => t.length > 0 && !CLEANER_NOISE.has(t));
 }
 
-/** Score de correspondance Jaccard entre un nom de dossier et des ensembles de tokens d'apps. */
-function cleanerBestMatch(folderName, appTokenSets) {
-  const fSet = new Set(cleanerTokenize(folderName));
-  if (fSet.size === 0) return 0;
-  let best = 0;
-  for (const aSet of appTokenSets) {
-    if (aSet.size === 0) continue;
-    const inter = [...fSet].filter(t => aSet.has(t)).length;
-    const union = new Set([...fSet, ...aSet]).size;
-    const score = union > 0 ? inter / union : 0;
-    if (score > best) best = score;
-    if (best >= 0.6) return best; // early exit
-  }
-  return best;
+/**
+ * build_tokens (mod.rs) — fusionne nom + publisher, déduplique, trie.
+ */
+function cleanerBuildTokens(name, publisher = '') {
+  const tokens = [...cleanerTokenize(name)];
+  if (publisher) tokens.push(...cleanerTokenize(publisher));
+  return [...new Set(tokens)].sort();
 }
 
-/** Taille estimée d'un dossier (enfants directs uniquement — rapide). */
-function cleanerShallowSize(dirPath) {
+/**
+ * token_overlap (mod.rs) — proportion des tokens du dossier présents dans l'app.
+ * common / folder_tokens.len()  (≠ Jaccard)
+ */
+function cleanerTokenOverlap(folderTokens, appTokens) {
+  const appSet = new Set(appTokens);
+  const common = folderTokens.filter(t => appSet.has(t)).length;
+  return common / Math.max(folderTokens.length, 1);
+}
+
+/**
+ * entry_size (mod.rs) — taille récursive, profondeur plafonnée à 4
+ * pour éviter les scans trop longs sur les dossiers volumineux.
+ */
+function cleanerEntrySize(dirPath, depth = 0) {
+  if (depth > 4) return 0;
   try {
-    return fs.readdirSync(dirPath).reduce((sum, e) => {
-      try { return sum + fs.statSync(path.join(dirPath, e)).size; } catch { return sum; }
-    }, 0);
+    let size = 0;
+    for (const e of fs.readdirSync(dirPath, { withFileTypes: true })) {
+      const ep = path.join(dirPath, e.name);
+      try {
+        if (e.isFile()) size += fs.statSync(ep).size;
+        else if (e.isDirectory()) size += cleanerEntrySize(ep, depth + 1);
+      } catch {}
+    }
+    return size;
   } catch { return 0; }
+}
+
+/**
+ * base_confidence (mod.rs) — 3 signaux platform-agnostiques.
+ * Score initial = 0.0
+ */
+function cleanerBaseConfidence(fullPath, size, bestMatchScore) {
+  let score = 0.0;
+
+  // Signal 1 — qualité inverse du meilleur match (0.0 → +0.35)
+  if      (bestMatchScore === 0)    score += 0.35;
+  else if (bestMatchScore < 0.15)   score += 0.25;
+  else if (bestMatchScore < 0.30)   score += 0.15;
+  else if (bestMatchScore < 0.45)   score += 0.05;
+  // else 0.0
+
+  // Signal 2 — âge via mtime (-0.3 → +0.35)
+  try {
+    const days = (Date.now() - fs.statSync(fullPath).mtimeMs) / 86400000;
+    if      (days < 7)   score -= 0.30;
+    else if (days < 30)  score -= 0.15;
+    else if (days < 90)  score += 0.00;
+    else if (days < 180) score += 0.10;
+    else if (days < 365) score += 0.20;
+    else                 score += 0.35;
+  } catch {}
+
+  // Signal 3 — taille (-0.15 → +0.20)
+  if      (size === 0)                      score += 0.20;
+  else if (size < 1024)                     score += 0.10;
+  else if (size <= 1_048_576)               score += 0.00;
+  else if (size <= 100 * 1024 * 1024)       score -= 0.05;
+  else                                      score -= 0.15;
+
+  return score;
 }
 
 /** Scan des dossiers orphelins dans AppData. */
 ipcMain.handle('cleaner:scan', async () => {
-  // 1. Apps installées depuis le registre Windows
-  let appTokenSets = [];
+
+  // 1. ── Apps installées (registre Windows + Scoop) ────────────────────────
+  const apps  = [];   // { name, installLocation: string|null, tokens: string[] }
+  const seen  = new Map(); // name.toLowerCase() → index
+
+  // Registre Windows — 3 hives (HKLM, HKCU, WOW6432Node)
   try {
     const psCmd = [
       "Get-ItemProperty",
@@ -617,22 +698,53 @@ ipcMain.handle('cleaner:scan', async () => {
       "'HKLM:\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*'",
       "-ErrorAction SilentlyContinue",
       "| Where-Object { $_.DisplayName }",
-      "| Select-Object -ExpandProperty DisplayName",
+      "| Select-Object DisplayName,Publisher,InstallLocation",
       "| ConvertTo-Json -Compress",
     ].join(' ');
     const raw = execSync(
       `powershell -NoProfile -NonInteractive -Command "${psCmd}"`,
       { timeout: 20000, maxBuffer: 4 * 1024 * 1024 }
     ).toString().trim();
-    const names = JSON.parse(raw);
-    appTokenSets = (Array.isArray(names) ? names : [names])
-      .filter(Boolean)
-      .map(n => new Set(cleanerTokenize(String(n))));
-  } catch { /* registre inaccessible ou PowerShell absent */ }
 
-  // 2. Scan des dossiers AppData
+    const list = JSON.parse(raw);
+    for (const e of (Array.isArray(list) ? list : [list])) {
+      if (!e || !e.DisplayName) continue;
+      const displayName  = String(e.DisplayName);
+      const publisher    = e.Publisher    ? String(e.Publisher).trim()    : '';
+      const installLoc   = e.InstallLocation ? String(e.InstallLocation).trim() : null;
+      const key          = displayName.toLowerCase();
+
+      if (seen.has(key)) {
+        // Fusion : mettre à jour InstallLocation si manquant
+        if (!apps[seen.get(key)].installLocation && installLoc) {
+          apps[seen.get(key)].installLocation = installLoc;
+        }
+        continue;
+      }
+      seen.set(key, apps.length);
+      apps.push({ name: displayName, installLocation: installLoc || null,
+                  tokens: cleanerBuildTokens(displayName, publisher) });
+    }
+  } catch { /* PowerShell indisponible ou registre inaccessible */ }
+
+  // Scoop — ~/scoop/apps
+  try {
+    const scoopDir = path.join(os.homedir(), 'scoop', 'apps');
+    if (fs.existsSync(scoopDir)) {
+      for (const e of fs.readdirSync(scoopDir, { withFileTypes: true })) {
+        if (!e.isDirectory() || e.name === 'scoop') continue;
+        const key = e.name.toLowerCase();
+        if (seen.has(key)) continue;
+        const loc = path.join(scoopDir, e.name);
+        seen.set(key, apps.length);
+        apps.push({ name: e.name, installLocation: loc, tokens: cleanerBuildTokens(e.name) });
+      }
+    }
+  } catch {}
+
+  // 2. ── Scan AppData ───────────────────────────────────────────────────────
   const scanDirs = [
-    { base: process.env.APPDATA    || '', label: 'APPDATA'      },
+    { base: process.env.APPDATA      || '', label: 'APPDATA'      },
     { base: process.env.LOCALAPPDATA || '', label: 'LOCALAPPDATA' },
   ].filter(d => d.base);
 
@@ -644,29 +756,47 @@ ipcMain.handle('cleaner:scan', async () => {
 
     for (const entry of entries) {
       if (!entry.isDirectory()) continue;
-      const name = entry.name;
+      const name     = entry.name;
+      const nameLower = name.toLowerCase();
 
-      // Filtres d'exclusion système
-      if (CLEANER_SKIP.has(name.toLowerCase())) continue;
-      if (/^\{[0-9a-f\-]{36}\}$/i.test(name)) continue; // GUID
-      if (name.length < 3) continue;
+      // Filtres d'exclusion — identiques à cleanapp windows.rs
+      if (CLEANER_EXCLUDED.has(name)) continue;
+      if (CLEANER_PREFIXES.some(p => nameLower.startsWith(p))) continue;
 
-      const fullPath = path.join(base, name);
-      const matchScore = cleanerBestMatch(name, appTokenSets);
-      if (matchScore >= 0.6) continue; // encore installée
+      const fullPath     = path.join(base, name);
+      const folderTokens = cleanerTokenize(name);
 
-      let stats = null;
-      try { stats = fs.statSync(fullPath); } catch { continue; }
+      // Meilleur score de correspondance contre toutes les apps installées
+      let bestScore = 0;
+      for (const app of apps) {
+        // Correspondance exacte (insensible casse) → score 1.0
+        if (nameLower === app.name.toLowerCase()) { bestScore = 1.0; break; }
+        const s = cleanerTokenOverlap(folderTokens, app.tokens);
+        if (s > bestScore) bestScore = s;
+        if (bestScore >= 0.6) break;
+      }
+      if (bestScore >= 0.6) continue; // dossier de l'app encore installée
 
-      const ageDays = Math.round((Date.now() - stats.mtimeMs) / 86400000);
+      // Taille récursive (plafon profondeur 4)
+      const size = cleanerEntrySize(fullPath);
 
-      // Score de confiance — même logique que cleanapp
-      let confidence = 0.5;
-      if      (ageDays < 7)    confidence -= 0.30;
-      else if (ageDays > 365)  confidence += 0.35;
-      else if (ageDays > 90)   confidence += 0.20;
-      else if (ageDays > 30)   confidence += 0.10;
-      confidence += 0.35 * (1 - matchScore); // faible match → plus suspect
+      // Âge (pour l'affichage)
+      let ageDays = 0;
+      try { ageDays = Math.round((Date.now() - fs.statSync(fullPath).mtimeMs) / 86400000); } catch {}
+
+      // Score de confiance — base (3 signaux) + Signal 4 Windows
+      let confidence = cleanerBaseConfidence(fullPath, size, bestScore);
+
+      // Signal 4 (windows.rs) — boost +0.15 si l'app est dans le registre
+      // mais son InstallLocation n'existe plus sur le disque
+      const uninstalledBoost = apps.some(app => {
+        const appL = app.name.toLowerCase();
+        return (nameLower.includes(appL) || appL.includes(nameLower))
+          && app.installLocation
+          && !fs.existsSync(app.installLocation);
+      });
+      if (uninstalledBoost) confidence += 0.15;
+
       confidence = Math.max(0, Math.min(1, confidence));
 
       results.push({
@@ -675,8 +805,8 @@ ipcMain.handle('cleaner:scan', async () => {
         base:       label,
         confidence: Math.round(confidence * 100),
         ageDays,
-        size:       cleanerShallowSize(fullPath),
-        matchScore: Math.round(matchScore * 100),
+        size,
+        matchScore: Math.round(bestScore * 100),
       });
     }
   }
@@ -684,18 +814,16 @@ ipcMain.handle('cleaner:scan', async () => {
   return results.sort((a, b) => b.confidence - a.confidence);
 });
 
-/** Supprime les chemins sélectionnés. */
+/** Supprime les chemins sélectionnés — refuse tout chemin hors AppData. */
 ipcMain.handle('cleaner:delete', async (_, paths) => {
   if (!Array.isArray(paths)) return { deleted: [], errors: [] };
   const deleted = [], errors = [];
+  const appdata   = (process.env.APPDATA      || '').toLowerCase();
+  const localdata = (process.env.LOCALAPPDATA || '').toLowerCase();
   for (const p of paths) {
-    // Garde-fou : refuser toute suppression hors de AppData
-    const appdata   = (process.env.APPDATA    || '').toLowerCase();
-    const localdata = (process.env.LOCALAPPDATA || '').toLowerCase();
     const pl = p.toLowerCase();
     if (!pl.startsWith(appdata) && !pl.startsWith(localdata)) {
-      errors.push({ path: p, error: 'chemin refusé (hors AppData)' });
-      continue;
+      errors.push({ path: p, error: 'chemin refusé (hors AppData)' }); continue;
     }
     try {
       fs.rmSync(p, { recursive: true, force: true });
