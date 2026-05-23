@@ -4,6 +4,8 @@
 
 Findium is a desktop application built with Electron that combines open-source intelligence (OSINT) tools, an AI analysis engine (Claude), and a data broker erasure module into a single encrypted workspace.
 
+Think of it as a **free, open-source alternative to [Maltego](https://www.maltego.com/)** — same idea (graph-based OSINT investigation, entity linking, relationship mapping), without the $999/year price tag. No account required, no cloud, everything runs and stays local.
+
 ---
 
 ## Features
